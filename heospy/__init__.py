@@ -10,13 +10,14 @@ http://rn.dmglobal.com/euheos/HEOS_CLI_ProtocolSpecification.pdf
 
 import json
 import os
-import telnetlib
+import telnetlib3
 import re
 import logging
 import argparse
 import six
 import sys
 import time
+import asyncio
 from collections import OrderedDict
 from pathlib import Path
 
@@ -102,7 +103,7 @@ This needs a JSON config file with a minimal content:
                     try:
                         self.host = re.match(r"http:..([^\:]+):", response.location).group(1)
                         logging.debug("Testing host '{}'".format(self.host))                    
-                        self.telnet = telnetlib.Telnet(self.host, 1255)
+                        self.telnet = asyncio.get_event_loop().run_until_complete(telnetlib3.open_connection(self.host, 1255))
                         logging.debug("Telnet '{}'".format(self.telnet))                    
                         self.pid = self._get_player(self.main_player_name)
                         logging.debug("pid '{}'".format(self.pid))                                            
@@ -124,7 +125,7 @@ This needs a JSON config file with a minimal content:
             logging.info(u"My cache says your HEOS player '{}' is at {}".format(self.main_player_name,
                                                                                 self.host))
             try:
-                self.telnet = telnetlib.Telnet(self.host, 1255, timeout=TIMEOUT)
+                self.telnet = asyncio.get_event_loop().run_until_complete(telnetlib3.open_connection(self.host, 1255, connect_timeout=TIMEOUT))
             except Exception as e:
                 raise HeosPlayerGeneralException("telnet failed")
 
@@ -156,33 +157,56 @@ This needs a JSON config file with a minimal content:
         """Execute a `command` and return the response(s)."""
         command = self.heosurl + command
         logging.debug("telnet request {}".format(command))
-        self.telnet.write(command.encode('ascii') + b'\n')
-        response = b''
-        logging.debug("starting response loop")
-        while True:
-            response += self.telnet.read_some()
+        
+        async def send_and_receive():
+            reader, writer = self.telnet
+            writer.write(command + '\r\n')
+            await writer.drain()
+            
+            response_data = b''
+            while True:
+                try:
+                    chunk = await reader.read(1024)
+                    if not chunk:
+                        break
+                    response_data += chunk
+                    
+                    try:
+                        response_json = json.loads(response_data.decode("utf-8"))
+                        logging.debug("found valid JSON: {}".format(json.dumps(response_json)))
+                        
+                        if not wait:
+                            logging.debug("I accept the first response: {}".format(response_json))
+                            return response_json
+                            
+                        # sometimes, I get a response with the message "under process"
+                        message = response_json.get("heos", {}).get("message", "")
+                        if "command under process" not in message:
+                            logging.debug("I assume this is the final response: {}".format(response_json))
+                            return response_json
+                            
+                        logging.debug("Wait for the final response")
+                        response_data = b''  # forget this message
+                    except ValueError:
+                        logging.debug("... unfinished response: {}".format(response_data))
+                        # response is not a complete JSON object
+                        pass
+                    except TypeError:
+                        logging.debug("... unfinished response: {}".format(response_data))
+                        # response is not a complete JSON object
+                        pass
+                except Exception as e:
+                    logging.error(f"Error reading from telnet: {e}")
+                    break
+                    
+            # If we get here without returning, try to parse what we have
             try:
-                response = json.loads(response.decode("utf-8"))
-                logging.debug("found valid JSON: {}".format(json.dumps(response)))
-                if not wait:
-                    logging.debug("I accept the first response: {}".format(response))
-                    break
-                # sometimes, I get a response with the message "under
-                # process". I might want to wait here
-                message = response.get("heos", {}).get("message", "")
-                if "command under process" not in message:
-                    logging.debug("I assume this is the final response: {}".format(response))
-                    break
-                logging.debug("Wait for the final response")
-                response = b'' # forget this message
-            except ValueError:
-                logging.debug("... unfinished response: {}".format(response))
-                # response is not a complete JSON object
-                pass
-            except TypeError:
-                logging.debug("... unfinished response: {}".format(response))                
-                # response is not a complete JSON object
-                pass
+                return json.loads(response_data.decode("utf-8"))
+            except:
+                return {"error": "Failed to get valid response"}
+        
+        # Run the async function in the event loop
+        response = asyncio.get_event_loop().run_until_complete(send_and_receive())
 
         # try to parse the message attribute of the response, there might be
         # some useful information, especially if the payload attribute is
@@ -472,6 +496,3 @@ def main():
         # we may want to delete the lockfile created earlier, no matter how things were going previously.
         if script_args.lockfile:
             Path(script_args.lockfile).unlink()
-
-
-
