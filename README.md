@@ -1,8 +1,8 @@
-# *** This is archived as I don't use it personally and won't work on the code any longer ***
+# Intro
+
+This was forked and updated to replace `telnetlib` with `telnetlib3` in Python 3.13.3. `telnetlib3` uses `asyncio` which presumably is fine, but YMMV. Tested and working with my Denon AVR-S760H.
 
 # Control an HEOS player with a Python script
-
-[![PyPI version](https://badge.fury.io/py/heospy.svg)](https://badge.fury.io/py/heospy)
 
 ## Requirements
 
@@ -10,8 +10,7 @@ You have an [HEOS][] speaker in your local network and Python 3.
 
 ## Usage
 
-0. Install the package with `pip install heospy` (latest published release from
-   pypi) or `pip install git+https://github.com/ping13/heospy.git` (if you want
+0. Install the package with `pip install git+https://github.com/mikewebkist/heospy.git` (if you want
    to use the latest git version). You can also download the source package and
    run `pip install .`.
 
@@ -43,7 +42,7 @@ You have an [HEOS][] speaker in your local network and Python 3.
     Use the flag `--help` for a detailed help.
 
 [specs]: http://rn.dmglobal.com/euheos/HEOS_CLI_ProtocolSpecification.pdf
-[HEOS]: http://heoslink.denon.com
+[HEOS]: https://support.denon.com/app/answers/detail/a_id/6953/~/heos-control-protocol-%28cli%29
 [HEOS account]: http://denon.custhelp.com/app/answers/detail/a_id/1968
 
 ## Parsing the response from HEOS
