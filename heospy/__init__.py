@@ -125,9 +125,10 @@ This needs a JSON config file with a minimal content:
             logging.info(u"My cache says your HEOS player '{}' is at {}".format(self.main_player_name,
                                                                                 self.host))
             try:
-                self.telnet = asyncio.get_event_loop().run_until_complete(telnetlib3.open_connection(self.host, 1255, connect_timeout=TIMEOUT))
+                self.telnet = asyncio.get_event_loop().run_until_complete(telnetlib3.open_connection(self.host, 1255, connect_minwait=TIMEOUT))
             except Exception as e:
-                raise HeosPlayerGeneralException("telnet failed")
+                logging.info("First connection failed. Try to rediscover the HEOS players.")
+                self.__init__(rediscover=True, config_file=self._config_file)
 
         # check if we've found what we were looking for
         if self.host is None:
@@ -163,7 +164,7 @@ This needs a JSON config file with a minimal content:
             writer.write(command + '\r\n')
             await writer.drain()
             
-            response_data = b''
+            response_data = ''
             while True:
                 try:
                     chunk = await reader.read(1024)
@@ -172,7 +173,7 @@ This needs a JSON config file with a minimal content:
                     response_data += chunk
                     
                     try:
-                        response_json = json.loads(response_data.decode("utf-8"))
+                        response_json = json.loads(response_data)
                         logging.debug("found valid JSON: {}".format(json.dumps(response_json)))
                         
                         if not wait:
@@ -186,7 +187,7 @@ This needs a JSON config file with a minimal content:
                             return response_json
                             
                         logging.debug("Wait for the final response")
-                        response_data = b''  # forget this message
+                        response_data = ''  # forget this message
                     except ValueError:
                         logging.debug("... unfinished response: {}".format(response_data))
                         # response is not a complete JSON object
@@ -201,7 +202,7 @@ This needs a JSON config file with a minimal content:
                     
             # If we get here without returning, try to parse what we have
             try:
-                return json.loads(response_data.decode("utf-8"))
+                return json.loads(response_data)
             except:
                 return {"error": "Failed to get valid response"}
         
